@@ -1,0 +1,13 @@
+[Unit]
+Description=Run installer for Foreman + Katello.
+After=network-online.target
+Before=getty.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=-/run.sh
+StandardOutput=journal+console
+
+[Install]
+WantedBy=multi-user.target

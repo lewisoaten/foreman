@@ -1,31 +1,50 @@
-FROM centos
+FROM centos:7.9.2009
 
-MAINTAINER P Pavlov "ppavlov@nomail.com"
+# Setup Systemd
+ENV container docker
 
-# yum update
-RUN yum update -y
+RUN echo "Setting up systemd" \
+    && (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ $i == \
+    systemd-tmpfiles-setup.service ] || rm -f $i; done) \
+    && rm -f /lib/systemd/system/multi-user.target.wants/* \
+    && rm -f /etc/systemd/system/*.wants/* \
+    && rm -f /lib/systemd/system/local-fs.target.wants/* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*udev* \
+    && rm -f /lib/systemd/system/sockets.target.wants/*initctl* \
+    && rm -f /lib/systemd/system/basic.target.wants/* \
+    && rm -f /lib/systemd/system/anaconda.target.wants/* \
+    && echo 'root' | passwd --stdin root \
+    && echo "Systemd setup"
 
-#RUN setenforce 0
-#RUN sed -i 's/SELINUX=enforcing/SELINUX=permissive/g' /etc/selinux/config
+VOLUME [ "/sys/fs/cgroup" ]
 
-#RUN sed -i 's#localhost#foreman.sainsburys.co.uk foreman#'  /etc/hosts
-RUN echo "127.0.0.1 foreman.sainsburys.co.uk foreman" >> /etc/hosts
+ENV foreman_version 3.2
+ENV katello_version 4.4
 
-# install the katello-repos
-RUN yum -y localinstall http://fedorapeople.org/groups/katello/releases/yum/3.2/katello/el7/x86_64/katello-repos-latest.rpm
-RUN yum -y localinstall http://yum.theforeman.org/releases/nightly/el7/x86_64/foreman-release.rpm
-RUN yum -y localinstall http://yum.puppetlabs.com/puppetlabs-release-el-7.noarch.rpm
-RUN yum -y localinstall http://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
-RUN yum -y install foreman-release-scl
-
-# install katello
-RUN yum -y install katello
+RUN echo "Installing dependencies" \
+    # Setup required repos
+    && yum -y localinstall https://yum.theforeman.org/releases/"${foreman_version}"/el7/x86_64/foreman-release.rpm \
+    && yum -y localinstall https://yum.theforeman.org/katello/"${katello_version}"/katello/el7/x86_64/katello-repos-latest.rpm \
+    && yum -y localinstall https://yum.puppet.com/puppet7-release-el-7.noarch.rpm \
+    && yum -y install epel-release centos-release-scl-rh \
+    # Install Katello
+    && yum -y update \
+    && yum -y install openssh-server openssh-clients foreman-installer-katello \
+    # Cleanup
+    && yum clean all \
+  	&& rm -rf /var/cache/yum \
+    && echo "Dependencies installed"
 
 #Adding the Configuration files
-ADD run.sh /run.sh
-ADD foreman-answers.yaml /etc/foreman-installer/scenarios.d/foreman-answers.yaml 
-ADD katello-answers.yaml /etc/foreman-installer/scenarios.d/katello-answers.yaml
-ADD capsule-answers.yaml /etc/foreman-installer/scenarios.d/capsule-answers.yaml
+ADD run.sh /
+ADD installer.service etc/systemd/system/
+ADD foreman-answers.yaml /etc/foreman-installer/scenarios.d/
+ADD katello-answers.yaml /etc/foreman-installer/scenarios.d/
+
+RUN echo "Configure systemd service" \
+    # Setup required repos
+    && systemctl enable installer.service \
+    && echo "Done configuring systemd service"
 
 ### ports
 # puppet (via apache)
@@ -37,9 +56,10 @@ EXPOSE 80
 # api communication
 EXPOSE 443
 EXPOSE 8080
-# qpid ssl 
+# qpid ssl
 EXPOSE 5671
 # smart proxy
 EXPOSE 9090
 
-CMD ["/run.sh"]
+CMD ["/usr/sbin/init"]
+#CMD ["/run.sh"]
